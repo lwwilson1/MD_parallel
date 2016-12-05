@@ -95,25 +95,11 @@ int main(int argc, char** argv)
         senditer = (int)(floor((p-1)/2));   /*for even p, half do senditer, half 1 more */
     
     
-    printf("proc %d, numparloc %d\n", rank, numparloc);
+    printf("Proc %d has %d local particles\n", rank, numparloc);
     
     
     /* Allocate arrays */
     /* Allocate all maxparloc for sending equality */
-    
-    /* make_3array(rS, nt+1, maxparloc, 3);
-    make_3array(fS, nt+1, maxparloc, 3);
-    
-    make_matrix(denergy, nt+1, maxparloc);
-    make_matrix(kenergy, nt+1, maxparloc);
-    
-    make_matrix(rS2, maxparloc, 3);
-    make_matrix(fS2, maxparloc, 3);
-    make_vector(denergy2, maxparloc);
-    
-    make_matrix(rS1, maxparloc, 3);
-    make_matrix(fS1, maxparloc, 3);
-    make_vector(denergy1, maxparloc); */
     
     make_vector(rS, (nt+1) * maxparloc * 3);
     make_vector(fS, (nt+1) * maxparloc * 3);
@@ -129,35 +115,25 @@ int main(int argc, char** argv)
     make_vector(fS1, maxparloc * 3);
     make_vector(denergy1, maxparloc);
     
-    
-    printf("rS, fS, denergy, allocated\n");
-    
     make_vector(qS, maxparloc);
     make_vector(mS, maxparloc);
-    //make_matrix(pS, maxparloc, 3);
     make_vector(pS, maxparloc * 3);
     
     make_vector(qS1, maxparloc);
     make_vector(qS2, maxparloc);
     make_vector(mS2, maxparloc);
     
-    printf("qS, mS, pS allocated\n");
     
     MPI_File_open(MPI_COMM_WORLD, sampin1, MPI_MODE_RDONLY, MPI_INFO_NULL, &fp);
     MPI_File_seek(fp, (MPI_Offset)globparloc*5*sizeof(double), MPI_SEEK_SET);
     
     for (i = 0; i < numparloc; i++) {
         MPI_File_read(fp, buf, 5, MPI_DOUBLE, &status);
-        /*rS[0][i][0] = buf[0];
-        rS[0][i][1] = buf[1];
-        rS[0][i][2] = buf[2];*/
         rS[i*3 + 0] = buf[0];
         rS[i*3 + 1] = buf[1];
         rS[i*3 + 2] = buf[2];
         qS[i] = buf[3];
         mS[i] = buf[4];
-        printf("%d, %d: buf: %f %f %f %f %f\n", rank, i, buf[0], buf[1], buf[2],
-               buf[3], buf[4]);
     }
     
     MPI_File_close(&fp);
@@ -224,16 +200,53 @@ int main(int argc, char** argv)
         numpar1 = numpar2;
     }
     
+    /* For even number of procs, must perform a half iteration */
+    if (p%2 == 0) {
+        if(rank >= senditer && rank < p/2+senditer) {
+            MPI_Send(rS1, xdim, MPI_DOUBLE, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
+            MPI_Send(qS1, maxparloc, MPI_DOUBLE, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
+            MPI_Send(&numpar1, 1, MPI_INT, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
+        }
+        
+        if(rank >= p/2) {
+            MPI_Recv(rS2, xdim, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,
+                     MPI_COMM_WORLD, &status);
+            MPI_Recv(qS2, maxparloc, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,
+                     MPI_COMM_WORLD, &status);
+            MPI_Recv(&numpar2, 1, MPI_INT, mod(rank-1,p), MPI_ANY_TAG,
+                     MPI_COMM_WORLD, &status);
+            
+            sendtag = status.MPI_TAG;
+            
+            direct_forces(&rS[0],  qS,  &fS[0], &denergy[0], numparloc,
+                          rS2, qS2,     fS2,    denergy2, numpar2,
+                          pot_type, kappa);
+            
+            MPI_Send(fS2, xdim, MPI_DOUBLE, sendtag, sendtag, MPI_COMM_WORLD);
+            MPI_Send(denergy2, maxparloc, MPI_DOUBLE, sendtag, sendtag, MPI_COMM_WORLD);
+        }
+        
+        if(rank < p/2) {
+            MPI_Recv(fS1, xdim, MPI_DOUBLE, mod(rank+senditer+1,p), rank,
+                     MPI_COMM_WORLD, &status);
+            MPI_Recv(denergy1, maxparloc, MPI_DOUBLE, mod(rank+senditer+1,p), rank,
+                     MPI_COMM_WORLD, &status);
+            
+            for (i = 0; i < numparloc; i++) {
+                fS[0 + i*3 + 0] += fS1[i*3 + 0];
+                fS[0 + i*3 + 1] += fS1[i*3 + 1];
+                fS[0 + i*3 + 2] += fS1[i*3 + 2];
+                denergy[0 + i] += denergy1[i];
+            }
+        }
+    }
+    
     for (i = 0; i < numparloc; i++) {
         fS[0 + i*3 + 0] *= qS[i];
         fS[0 + i*3 + 1] *= qS[i];
         fS[0 + i*3 + 2] *= qS[i];
         denergy[0 + i] *= qS[i];
     }
-
-    for (i = 0; i < numparloc; i++)
-        printf("proc %d, particle %d: %lf %lf %lf %lf %lf %lf \n", rank, i,
-               qS[i], mS[i], fS[0+i*3+0], fS[0+i*3+1], fS[0+i*3+2], denergy[0+i]);
 
 
     /* Starting timer before dynamics simulation */
@@ -315,6 +328,48 @@ int main(int argc, char** argv)
             numpar1 = numpar2;
         }
         
+        /* For even number of procs, must perform a half iteration */
+        if (p%2 == 0) {
+            if(rank >= senditer && rank < p/2+senditer) {
+                MPI_Send(rS1, xdim, MPI_DOUBLE, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
+                MPI_Send(qS1, maxparloc, MPI_DOUBLE, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
+                MPI_Send(&numpar1, 1, MPI_INT, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
+            }
+            
+            if(rank >= p/2) {
+                MPI_Recv(rS2, xdim, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,
+                         MPI_COMM_WORLD, &status);
+                MPI_Recv(qS2, maxparloc, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,
+                         MPI_COMM_WORLD, &status);
+                MPI_Recv(&numpar2, 1, MPI_INT, mod(rank-1,p), MPI_ANY_TAG,
+                         MPI_COMM_WORLD, &status);
+                
+                sendtag = status.MPI_TAG;
+                
+                direct_forces(&rS[(j+1)*xdim], qS, &fS[(j+1)*xdim],
+                              &denergy[(j+1)*maxparloc], numparloc,
+                              rS2, qS2, fS2, denergy2, numpar2,
+                              pot_type, kappa);
+                
+                MPI_Send(fS2, xdim, MPI_DOUBLE, sendtag, sendtag, MPI_COMM_WORLD);
+                MPI_Send(denergy2, maxparloc, MPI_DOUBLE, sendtag, sendtag, MPI_COMM_WORLD);
+            }
+            
+            if(rank < p/2) {
+                MPI_Recv(fS1, xdim, MPI_DOUBLE, mod(rank+senditer+1,p), rank,
+                         MPI_COMM_WORLD, &status);
+                MPI_Recv(denergy1, maxparloc, MPI_DOUBLE, mod(rank+senditer+1,p), rank,
+                         MPI_COMM_WORLD, &status);
+                
+                for (i = 0; i < numparloc; i++) {
+                    fS[(j+1)*xdim + i*3 + 0] += fS1[i*3 + 0];
+                    fS[(j+1)*xdim + i*3 + 1] += fS1[i*3 + 1];
+                    fS[(j+1)*xdim + i*3 + 2] += fS1[i*3 + 2];
+                    denergy[(j+1)*maxparloc + i] += denergy1[i];
+                }
+            }
+        }
+        
         for (i = 0; i < numparloc; i++) {
             fS[(j+1)*xdim + i*3 + 0] *= qS[i];
             fS[(j+1)*xdim + i*3 + 1] *= qS[i];
@@ -336,8 +391,6 @@ int main(int argc, char** argv)
     
     dengyloc = sum(&denergy[nt*maxparloc], numparloc);
     MPI_Reduce(&dengyloc, &dengyglob, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
-    
-    printf("Proc %d: Local potential sum: %f\n", rank, dengyloc);
     
     if (rank == 0) {
         printf("\nElapsed time on proc 0: %f s\n", t2-t1);

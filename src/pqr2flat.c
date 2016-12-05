@@ -39,8 +39,8 @@ int main()
 
     i = 0;
     fp = fopen(sampin1, "r");
-    while (fscanf(fp, "%s %s %s %s %s %lf %lf %lf %lf %s %s",
-                  c1, c2, c3, c4, c5, &a1, &a2, &a3, &a4, c6, c7) != EOF) {
+    while (fscanf(fp, "%s %s %s %s %s %lf %lf %lf %lf %s",
+                  c1, c2, c3, c4, c5, &a1, &a2, &a3, &a4, c6) != EOF) {
         if (strncmp(c1, "ATOM", 4) == 0) {
             xS[i] = a1;
             yS[i] = a2;
