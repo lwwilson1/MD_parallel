@@ -7,11 +7,11 @@
 #include "array.h"
 #include "tools.h"
 
-void direct_forces(double **pS,  double *qS,  double **fS,  double *denergy,  int numpar,
-                   double **pS2, double *qS2, double **fS2, double *denergy2, int numpar2,
+void direct_forces(double *pS,  double *qS,  double *fS,  double *denergy,  int numpar,
+                   double *pS2, double *qS2, double *fS2, double *denergy2, int numpar2,
                    int pot_type, double kappa);
 
-void direct_forces_within(double **pS,  double *qS,  double **fS,  double *denergy,
+void direct_forces_within(double *pS,  double *qS,  double *fS,  double *denergy,
                           int numpar, int pot_type, double kappa);
 
 /* The treedriver routine in Fortran */
@@ -34,19 +34,19 @@ int main(int argc, char** argv)
     
     /* arrays for coordinates, charges, potentials of particles */
     double *qS, *mS;            /* particle charges and masses */
-    double ***rS;               /* particle positions */
-    double ***fS;               /* particle forces */
-    double **pS;                /* particle momenta */
-    double **denergy;           /* particle pot energies */
-    double **kenergy;           /* particle kin energies */
+    double *rS;               /* particle positions */
+    double *fS;               /* particle forces */
+    double *pS;                /* particle momenta */
+    double *denergy;           /* particle pot energies */
+    double *kenergy;           /* particle kin energies */
     
     double *qS2, *mS2;          /* particle charges and masses */
-    double **rS2;              /* particle positions */
-    double **fS2;              /* particle forces */
+    double *rS2;              /* particle positions */
+    double *fS2;              /* particle forces */
     double *denergy2;          /* particle pot energies */
     
-    double **rS1, **rStemp;
-    double **fS1;
+    double *rS1, *rStemp;
+    double *fS1;
     double *qS1, *qStemp;
     double *denergy1;
     
@@ -55,6 +55,7 @@ int main(int argc, char** argv)
     
     /* local variables */
     int i, j, k;
+    int xdim;
     double dengyglob, dengyloc;
     double buf[5];
     int numparloc;
@@ -81,6 +82,7 @@ int main(int argc, char** argv)
 
     numparloc = (int)floor((double)numparsS/(double)p);
     maxparloc = numparloc + (numparsS - (int)floor((double)numparsS/(double)p) * p);
+    xdim = maxparloc * 3;
     
     if (rank == 0)
         numparloc = maxparloc;
@@ -98,7 +100,8 @@ int main(int argc, char** argv)
     
     /* Allocate arrays */
     /* Allocate all maxparloc for sending equality */
-    make_3array(rS, nt+1, maxparloc, 3);
+    
+    /* make_3array(rS, nt+1, maxparloc, 3);
     make_3array(fS, nt+1, maxparloc, 3);
     
     make_matrix(denergy, nt+1, maxparloc);
@@ -110,13 +113,29 @@ int main(int argc, char** argv)
     
     make_matrix(rS1, maxparloc, 3);
     make_matrix(fS1, maxparloc, 3);
+    make_vector(denergy1, maxparloc); */
+    
+    make_vector(rS, (nt+1) * maxparloc * 3);
+    make_vector(fS, (nt+1) * maxparloc * 3);
+    
+    make_vector(denergy, (nt+1) * maxparloc);
+    make_vector(kenergy, (nt+1) * maxparloc);
+    
+    make_vector(rS2, maxparloc * 3);
+    make_vector(fS2, maxparloc * 3);
+    make_vector(denergy2, maxparloc);
+    
+    make_vector(rS1, maxparloc * 3);
+    make_vector(fS1, maxparloc * 3);
     make_vector(denergy1, maxparloc);
+    
     
     printf("rS, fS, denergy, allocated\n");
     
     make_vector(qS, maxparloc);
     make_vector(mS, maxparloc);
-    make_matrix(pS, maxparloc, 3);
+    //make_matrix(pS, maxparloc, 3);
+    make_vector(pS, maxparloc * 3);
     
     make_vector(qS1, maxparloc);
     make_vector(qS2, maxparloc);
@@ -129,9 +148,12 @@ int main(int argc, char** argv)
     
     for (i = 0; i < numparloc; i++) {
         MPI_File_read(fp, buf, 5, MPI_DOUBLE, &status);
-        rS[0][i][0] = buf[0];
+        /*rS[0][i][0] = buf[0];
         rS[0][i][1] = buf[1];
-        rS[0][i][2] = buf[2];
+        rS[0][i][2] = buf[2];*/
+        rS[i*3 + 0] = buf[0];
+        rS[i*3 + 1] = buf[1];
+        rS[i*3 + 2] = buf[2];
         qS[i] = buf[3];
         mS[i] = buf[4];
         printf("%d, %d: buf: %f %f %f %f %f\n", rank, i, buf[0], buf[1], buf[2],
@@ -143,18 +165,18 @@ int main(int argc, char** argv)
 
     /* Zero out momenta before dynamics simulation */
     for (i = 0; i < numparloc; i++) {
-        pS[i][0] = 0.0;  pS[i][1] = 0.0;  pS[i][2] = 0.0;
+        pS[i*3 + 0] = 0.0;  pS[i*3 + 1] = 0.0;  pS[i*3 + 2] = 0.0;
     }
     
 
     /* Calculation of forces at initial time */
-    direct_forces_within(rS[0], qS, fS[0], denergy[0],
+    direct_forces_within(&rS[0], qS, &fS[0], &denergy[0],
                          numparloc, pot_type, kappa);
     
     for (i = 0; i < numparloc; i++) {
-        rS1[i][0] = rS[0][i][0];
-        rS1[i][1] = rS[0][i][1];
-        rS1[i][2] = rS[0][i][2];
+        rS1[i*3 + 0] = rS[0 + i*3 + 0];
+        rS1[i*3 + 1] = rS[0 + i*3 + 1];
+        rS1[i*3 + 2] = rS[0 + i*3 + 2];
         qS1[i] = qS[i];
     }
 
@@ -162,11 +184,9 @@ int main(int argc, char** argv)
     sendtag = rank;
     
     for (k = 0; k < senditer; k++) {
-        for (i = 0; i < maxparloc; i++) {
-            MPI_Sendrecv(rS1[i], 3, MPI_DOUBLE, mod(rank+1,p), sendtag,      /*stag is origin*/
-                         rS2[i], 3, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,  /*rtag is origin*/
-                         MPI_COMM_WORLD, &status);
-        }
+        MPI_Sendrecv(rS1, xdim, MPI_DOUBLE, mod(rank+1,p), sendtag,      /*stag is origin*/
+                     rS2, xdim, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,  /*rtag is origin*/
+                     MPI_COMM_WORLD, &status);
         
         MPI_Sendrecv(qS1, maxparloc, MPI_DOUBLE, mod(rank+1,p), sendtag,
                      qS2, maxparloc, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,
@@ -178,25 +198,23 @@ int main(int argc, char** argv)
         
         sendtag = status.MPI_TAG;
         
-        direct_forces(rS[0],  qS,  fS[0], denergy[0], numparloc,
-                        rS2, qS2,    fS2,   denergy2, numpar2,
+        direct_forces(&rS[0],  qS,  &fS[0], &denergy[0], numparloc,
+                         rS2, qS2,     fS2,    denergy2, numpar2,
                       pot_type, kappa);
         
-        for (i = 0; i < maxparloc; i++) {
-            MPI_Sendrecv(fS2[i], 3, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
-                         fS1[i], 3, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
-                         MPI_COMM_WORLD, &status);
-        }
+        MPI_Sendrecv(fS2, xdim, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
+                     fS1, xdim, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
+                     MPI_COMM_WORLD, &status);
         
         MPI_Sendrecv(denergy2, maxparloc, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
                      denergy1, maxparloc, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
                      MPI_COMM_WORLD, &status);
         
         for (i = 0; i < numparloc; i++) {
-            fS[0][i][0] += fS1[i][0];
-            fS[0][i][1] += fS1[i][1];
-            fS[0][i][2] += fS1[i][2];
-            denergy[0][i] += denergy1[i];
+            fS[0 + i*3 + 0] += fS1[i*3 + 0];
+            fS[0 + i*3 + 1] += fS1[i*3 + 1];
+            fS[0 + i*3 + 2] += fS1[i*3 + 2];
+            denergy[0 + i] += denergy1[i];
         }
         
         rStemp = rS1; qStemp = qS1;
@@ -207,15 +225,15 @@ int main(int argc, char** argv)
     }
     
     for (i = 0; i < numparloc; i++) {
-        fS[0][i][0] *= qS[i];
-        fS[0][i][1] *= qS[i];
-        fS[0][i][2] *= qS[i];
-        denergy[0][i] *= qS[i];
+        fS[0 + i*3 + 0] *= qS[i];
+        fS[0 + i*3 + 1] *= qS[i];
+        fS[0 + i*3 + 2] *= qS[i];
+        denergy[0 + i] *= qS[i];
     }
 
     for (i = 0; i < numparloc; i++)
         printf("proc %d, particle %d: %lf %lf %lf %lf %lf %lf \n", rank, i,
-               qS[i], mS[i], fS[0][i][0], fS[0][i][1], fS[0][i][2], denergy[0][i]);
+               qS[i], mS[i], fS[0+i*3+0], fS[0+i*3+1], fS[0+i*3+2], denergy[0+i]);
 
 
     /* Starting timer before dynamics simulation */
@@ -228,25 +246,27 @@ int main(int argc, char** argv)
         
         for (i = 0; i < numparloc; i++) {
 
-            pS[i][0] = pS[i][0] + 0.5 * dt * fS[j][i][0];
-            pS[i][1] = pS[i][1] + 0.5 * dt * fS[j][i][1];
-            pS[i][2] = pS[i][2] + 0.5 * dt * fS[j][i][2];
+            pS[i*3+0] += 0.5 * dt * fS[j*xdim + i*3 + 0];
+            pS[i*3+1] += 0.5 * dt * fS[j*xdim + i*3 + 1];
+            pS[i*3+2] += 0.5 * dt * fS[j*xdim + i*3 + 2];
             
-            rS[j+1][i][0] = rS[j][i][0] + dt * pS[i][0] / mS[i];
-            rS[j+1][i][1] = rS[j][i][1] + dt * pS[i][1] / mS[i];
-            rS[j+1][i][2] = rS[j][i][2] + dt * pS[i][2] / mS[i];
+            rS[(j+1)*xdim + i*3 + 0] = rS[j*xdim + i*3 + 0] + dt * pS[i*3+0] / mS[i];
+            rS[(j+1)*xdim + i*3 + 1] = rS[j*xdim + i*3 + 1] + dt * pS[i*3+1] / mS[i];
+            rS[(j+1)*xdim + i*3 + 2] = rS[j*xdim + i*3 + 2] + dt * pS[i*3+2] / mS[i];
         }
         
         
  
         
-        direct_forces_within(rS[j+1], qS, fS[j+1], denergy[j+1],
+        direct_forces_within(&rS[(j+1)*(maxparloc*3)], qS,
+                             &fS[(j+1)*(maxparloc*3)],
+                             &denergy[(j+1)*maxparloc],
                              numparloc, pot_type, kappa);
         
         for (i = 0; i < numparloc; i++) {
-            rS1[i][0] = rS[j+1][i][0];
-            rS1[i][1] = rS[j+1][i][1];
-            rS1[i][2] = rS[j+1][i][2];
+            rS1[i*3+0] = rS[(j+1)*xdim + i*3 + 0];
+            rS1[i*3+1] = rS[(j+1)*xdim + i*3 + 1];
+            rS1[i*3+2] = rS[(j+1)*xdim + i*3 + 2];
             qS1[i] = qS[i];
         }
         
@@ -254,11 +274,9 @@ int main(int argc, char** argv)
         sendtag = rank;
         
         for (k = 0; k < senditer; k++) {
-            for (i = 0; i < maxparloc; i++) {
-                MPI_Sendrecv(rS1[i], 3, MPI_DOUBLE, mod(rank+1,p), sendtag,      /*stag is origin*/
-                             rS2[i], 3, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,  /*rtag is origin*/
-                             MPI_COMM_WORLD, &status);
-            }
+            MPI_Sendrecv(rS1, xdim, MPI_DOUBLE, mod(rank+1,p), sendtag,      /*stag is origin*/
+                         rS2, xdim, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,  /*rtag is origin*/
+                         MPI_COMM_WORLD, &status);
             
             MPI_Sendrecv(qS1, maxparloc, MPI_DOUBLE, mod(rank+1,p), sendtag,
                          qS2, maxparloc, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,
@@ -270,25 +288,24 @@ int main(int argc, char** argv)
             
             sendtag = status.MPI_TAG;
             
-            direct_forces(rS[j+1],  qS,  fS[j+1], denergy[j+1], numparloc,
-                          rS2, qS2,    fS2,   denergy2, numpar2,
+            direct_forces(&rS[(j+1)*xdim], qS, &fS[(j+1)*xdim],
+                          &denergy[(j+1)*maxparloc], numparloc,
+                          rS2, qS2, fS2, denergy2, numpar2,
                           pot_type, kappa);
-            
-            for (i = 0; i < maxparloc; i++) {
-                MPI_Sendrecv(fS2[i], 3, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
-                             fS1[i], 3, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
-                             MPI_COMM_WORLD, &status);
-            }
+
+            MPI_Sendrecv(fS2, xdim, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
+                         fS1, xdim, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
+                         MPI_COMM_WORLD, &status);
             
             MPI_Sendrecv(denergy2, maxparloc, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
                          denergy1, maxparloc, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
                          MPI_COMM_WORLD, &status);
             
             for (i = 0; i < numparloc; i++) {
-                fS[j+1][i][0] += fS1[i][0];
-                fS[j+1][i][1] += fS1[i][1];
-                fS[j+1][i][2] += fS1[i][2];
-                denergy[j+1][i] += denergy1[i];
+                fS[(j+1)*xdim + i*3 + 0] += fS1[i*3 + 0];
+                fS[(j+1)*xdim + i*3 + 1] += fS1[i*3 + 1];
+                fS[(j+1)*xdim + i*3 + 2] += fS1[i*3 + 2];
+                denergy[(j+1)*maxparloc + i] += denergy1[i];
             }
             
             rStemp = rS1; qStemp = qS1;
@@ -299,25 +316,25 @@ int main(int argc, char** argv)
         }
         
         for (i = 0; i < numparloc; i++) {
-            fS[j+1][i][0] *= qS[i];
-            fS[j+1][i][1] *= qS[i];
-            fS[j+1][i][2] *= qS[i];
-            denergy[j+1][i] *= qS[i];
+            fS[(j+1)*xdim + i*3 + 0] *= qS[i];
+            fS[(j+1)*xdim + i*3 + 1] *= qS[i];
+            fS[(j+1)*xdim + i*3 + 2] *= qS[i];
+            denergy[(j+1)*maxparloc + i] *= qS[i];
         }
 
         
         
         for (i = 0; i < numparloc; i++) {
-            pS[i][0] = pS[i][0] + 0.5 * dt * fS[j+1][i][0];
-            pS[i][1] = pS[i][1] + 0.5 * dt * fS[j+1][i][1];
-            pS[i][2] = pS[i][2] + 0.5 * dt * fS[j+1][i][2];
+            pS[i*3+0] += 0.5 * dt * fS[(j+1)*xdim + i*3 + 0];
+            pS[i*3+1] += 0.5 * dt * fS[(j+1)*xdim + i*3 + 1];
+            pS[i*3+2] += 0.5 * dt * fS[(j+1)*xdim + i*3 + 2];
         }
     }
 
     if (rank == 0)
         t2 = MPI_Wtime();
     
-    dengyloc = sum(denergy[nt], numparloc);
+    dengyloc = sum(&denergy[nt*maxparloc], numparloc);
     MPI_Reduce(&dengyloc, &dengyglob, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     
     printf("Proc %d: Local potential sum: %f\n", rank, dengyloc);
@@ -329,19 +346,14 @@ int main(int argc, char** argv)
 
     
     /* Deallocate arrays */
-    free_3array(rS);
-    free_3array(fS);
-    free_matrix(denergy);
-    free_matrix(kenergy);
-    
-    printf("rS, fS, denergy, deallocated\n");
+    free_vector(rS);
+    free_vector(fS);
+    free_vector(denergy);
+    free_vector(kenergy);
     
     free_vector(qS);
     free_vector(mS);
-    free_matrix(pS);
-    
-    printf("qS, mS, pS deallocated\n\n");
-
+    free_vector(pS);
     
     MPI_Finalize();
     return 0;
@@ -351,8 +363,8 @@ int main(int argc, char** argv)
 
 
 
-void direct_forces(double **pS,  double *qS,  double **fS,  double *denergy,  int numpar,
-                   double **pS2, double *qS2, double **fS2, double *denergy2, int numpar2,
+void direct_forces(double *pS,  double *qS,  double *fS,  double *denergy,  int numpar,
+                   double *pS2, double *qS2, double *fS2, double *denergy2, int numpar2,
                    int pot_type, double kappa)
 {
     /* local variables */
@@ -364,19 +376,19 @@ void direct_forces(double **pS,  double *qS,  double **fS,  double *denergy,  in
     if (pot_type == 0) {
         
         for (j = 0; j < numpar2; j++) {
-            fS2[j][0] = 0.0;  fS2[j][1] = 0.0;  fS2[j][2] = 0.0;
+            fS2[j*3 + 0] = 0.0;  fS2[j*3 + 1] = 0.0;  fS2[j*3 + 2] = 0.0;
             denergy2[j] = 0.0;
         }
 
         for (i = 0; i < numpar; i++) {
-            xi = pS[i][0];
-            yi = pS[i][1];
-            zi = pS[i][2];
+            xi = pS[i*3 + 0];
+            yi = pS[i*3 + 1];
+            zi = pS[i*3 + 2];
             
             for (j = 0; j < numpar2; j++) {
-                tx = xi - pS2[j][0];
-                ty = yi - pS2[j][1];
-                tz = zi - pS2[j][2];
+                tx = xi - pS2[j*3 + 0];
+                ty = yi - pS2[j*3 + 1];
+                tz = zi - pS2[j*3 + 2];
 
                 rad = sqrt(tx*tx + ty*ty + tz*tz);
                     
@@ -386,33 +398,33 @@ void direct_forces(double **pS,  double *qS,  double **fS,  double *denergy,  in
                 temp1 = qS2[j] / pow(rad, 3);
                 temp2 = qS[i] / pow(rad, 3);
                 
-                fS[i][0] = fS[i][0] + tx * temp1;
-                fS[i][1] = fS[i][1] + ty * temp1;
-                fS[i][2] = fS[i][2] + tz * temp1;
+                fS[i*3 + 0] += tx * temp1;
+                fS[i*3 + 1] += ty * temp1;
+                fS[i*3 + 2] += tz * temp1;
 
-                fS2[j][0] = fS2[j][0] - tx * temp2;
-                fS2[j][1] = fS2[j][1] - ty * temp2;
-                fS2[j][2] = fS2[j][2] - tz * temp2;
+                fS2[j*3 + 0] -= tx * temp2;
+                fS2[j*3 + 1] -= ty * temp2;
+                fS2[j*3 + 2] -= tz * temp2;
             }
         }
         
     } else if (pot_type == 1) {
         
         for (j = 0; j < numpar2; j++) {
-            fS2[j][0] = 0.0;  fS2[j][1] = 0.0;  fS2[j][2] = 0.0;
+            fS2[j*3 + 0] = 0.0;  fS2[j*3 + 1] = 0.0;  fS2[j*3 + 2] = 0.0;
             denergy2[j] = 0.0;
         }
 
         for (i = 0; i < numpar; i++) {
-            xi = pS[i][0];
-            yi = pS[i][1];
-            zi = pS[i][2];
+            xi = pS[i*3 + 0];
+            yi = pS[i*3 + 1];
+            zi = pS[i*3 + 2];
             
             
             for (j = 0; j < numpar2; j++) {
-                tx = xi - pS2[j][0];
-                ty = yi - pS2[j][1];
-                tz = zi - pS2[j][2];
+                tx = xi - pS2[j*3 + 0];
+                ty = yi - pS2[j*3 + 1];
+                tz = zi - pS2[j*3 + 2];
 
                 rad = sqrt(tx*tx + ty*ty + tz*tz);
                 temp = exp(-kappa * rad);
@@ -423,13 +435,13 @@ void direct_forces(double **pS,  double *qS,  double **fS,  double *denergy,  in
                 temp1 = qS2[j] * temp * (kappa * rad + 1) / pow(rad, 3);
                 temp2 = qS[i] * temp * (kappa * rad + 1) / pow(rad, 3);
 
-                fS[i][0] = fS[i][0] + temp1 * tx;
-                fS[i][1] = fS[i][1] + temp1 * ty;
-                fS[i][2] = fS[i][2] + temp1 * tz;
+                fS[i*3 + 0] += temp1 * tx;
+                fS[i*3 + 1] += temp1 * ty;
+                fS[i*3 + 2] += temp1 * tz;
 
-                fS2[j][0] = fS2[j][0] - temp2 * tx;
-                fS2[j][1] = fS2[j][1] - temp2 * ty;
-                fS2[j][2] = fS2[j][2] - temp2 * tz;
+                fS2[j*3 + 0] -= temp2 * tx;
+                fS2[j*3 + 1] -= temp2 * ty;
+                fS2[j*3 + 2] -= temp2 * tz;
             }
         }
     }
@@ -439,7 +451,7 @@ void direct_forces(double **pS,  double *qS,  double **fS,  double *denergy,  in
 
 
 
-void direct_forces_within(double **pS,  double *qS,  double **fS,  double *denergy,
+void direct_forces_within(double *pS,  double *qS,  double *fS,  double *denergy,
                           int numpar, int pot_type, double kappa)
 {
     /* local variables */
@@ -450,19 +462,19 @@ void direct_forces_within(double **pS,  double *qS,  double **fS,  double *dener
     if (pot_type == 0) {
         
         for (i = 0; i < numpar; i++) {
-            fS[i][0] = 0.0;  fS[i][1] = 0.0;  fS[i][2] = 0.0;
+            fS[i*3 + 0] = 0.0;  fS[i*3 + 1] = 0.0;  fS[i*3 + 2] = 0.0;
             denergy[i] = 0.0;
         }
         
         for (i = 0; i < numpar; i++) {
-            xi = pS[i][0];
-            yi = pS[i][1];
-            zi = pS[i][2];
+            xi = pS[i*3 + 0];
+            yi = pS[i*3 + 1];
+            zi = pS[i*3 + 2];
             
             for (j = i+1; j < numpar; j++) {
-                tx = xi - pS[j][0];
-                ty = yi - pS[j][1];
-                tz = zi - pS[j][2];
+                tx = xi - pS[j*3 + 0];
+                ty = yi - pS[j*3 + 1];
+                tz = zi - pS[j*3 + 2];
                 
                 rad = sqrt(tx*tx + ty*ty + tz*tz);
                 
@@ -472,32 +484,32 @@ void direct_forces_within(double **pS,  double *qS,  double **fS,  double *dener
                 temp1 = qS[j] / pow(rad, 3);
                 temp2 = qS[i] / pow(rad, 3);
                 
-                fS[i][0] = fS[i][0] + tx * temp1;
-                fS[i][1] = fS[i][1] + ty * temp1;
-                fS[i][2] = fS[i][2] + tz * temp1;
+                fS[i*3 + 0] += tx * temp1;
+                fS[i*3 + 1] += ty * temp1;
+                fS[i*3 + 2] += tz * temp1;
                 
-                fS[j][0] = fS[j][0] - tx * temp2;
-                fS[j][1] = fS[j][1] - ty * temp2;
-                fS[j][2] = fS[j][2] - tz * temp2;
+                fS[j*3 + 0] -= tx * temp2;
+                fS[j*3 + 1] -= ty * temp2;
+                fS[j*3 + 2] -= tz * temp2;
             }
         }
         
     } else if (pot_type == 1) {
         
         for (i = 0; i < numpar; i++) {
-            fS[i][0] = 0.0;  fS[i][1] = 0.0;  fS[i][2] = 0.0;
+            fS[i*3 + 0] = 0.0;  fS[i*3 + 1] = 0.0;  fS[i*3 + 2] = 0.0;
             denergy[i] = 0.0;
         }
         
         for (i = 0; i < numpar; i++) {
-            xi = pS[i][0];
-            yi = pS[i][1];
-            zi = pS[i][2];
+            xi = pS[i*3 + 0];
+            yi = pS[i*3 + 1];
+            zi = pS[i*3 + 2];
             
             for (j = i+1; j < numpar; j++) {
-                tx = xi - pS[j][0];
-                ty = yi - pS[j][1];
-                tz = zi - pS[j][2];
+                tx = xi - pS[j*3 + 0];
+                ty = yi - pS[j*3 + 1];
+                tz = zi - pS[j*3 + 2];
                 
                 rad = sqrt(tx*tx + ty*ty + tz*tz);
                 temp = exp(-kappa * rad);
@@ -508,13 +520,13 @@ void direct_forces_within(double **pS,  double *qS,  double **fS,  double *dener
                 temp1 = qS[j] * temp * (kappa * rad + 1) / pow(rad, 3);
                 temp2 = qS[i] * temp * (kappa * rad + 1) / pow(rad, 3);
                 
-                fS[i][0] = fS[i][0] + temp1 * tx;
-                fS[i][1] = fS[i][1] + temp1 * ty;
-                fS[i][2] = fS[i][2] + temp1 * tz;
+                fS[i*3 + 0] += temp1 * tx;
+                fS[i*3 + 1] += temp1 * ty;
+                fS[i*3 + 2] += temp1 * tz;
                 
-                fS[j][0] = fS[j][0] - temp2 * tx;
-                fS[j][1] = fS[j][1] - temp2 * ty;
-                fS[j][2] = fS[j][2] - temp2 * tz;
+                fS[j*3 + 0] -= temp2 * tx;
+                fS[j*3 + 1] -= temp2 * ty;
+                fS[j*3 + 2] -= temp2 * tz;
             }
         }
     }
