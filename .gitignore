@@ -1,0 +1,5 @@
+scratch/
+src/*.o
+src/dynamics
+src/txt2bin
+src/pqr2flat
