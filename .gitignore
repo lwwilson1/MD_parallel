@@ -1,4 +1,5 @@
 scratch/
+results/
 src/*.o
 src/dynamics
 src/txt2bin

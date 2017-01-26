@@ -1,0 +1,41 @@
+    printf("Initial local tree on proc %d:\n", rank);
+    printf("       numpar: %d\n", troot->numpar);
+    printf("        x_mid: %e\n", troot->x_mid);
+    printf("        y_mid: %e\n", troot->y_mid);
+    printf("        z_mid: %e\n", troot->z_mid);
+    printf("       radius: %f\n", troot->radius);
+    printf("        ms223: %f\n", troot->ms[2][2][3]);
+    printf(" num children: %d\n\n", troot->num_children);
+    
+    for (i = 0; i < troot->num_children; i++) {
+        printf("Initial child %d tree on proc %d:\n", i, rank);
+        printf("       numpar: %d\n", troot->child[i]->numpar);
+        printf("        x_mid: %e\n", troot->child[i]->x_mid);
+        printf("        y_mid: %e\n", troot->child[i]->y_mid);
+        printf("        z_mid: %e\n", troot->child[i]->z_mid);
+        printf("       radius: %f\n", troot->child[i]->radius);
+        printf("        ms223: %f\n", troot->child[i]->ms[2][2][3]);
+        printf(" num children: %d\n\n", troot->child[i]->num_children);
+    }
+    
+    if (rank == 0) {
+        printf("Sent initial root on proc %d:\n", 3);
+        printf("       numpar: %d\n", (globtrees[3]).numpar);
+        printf("        x_mid: %e\n", (globtrees[3]).x_mid);
+        printf("        y_mid: %e\n", (globtrees[3]).y_mid);
+        printf("        z_mid: %e\n", (globtrees[3]).z_mid);
+        printf("       radius: %f\n", (globtrees[3]).radius);
+        printf("        ms223: %f\n\n", (globtrees[3]).ms[2][2][3]);
+        
+        for (i = 0; i < globtrees[3].num_children; i++) {
+            printf("Sent initial child %d on proc %d:\n", i, 3);
+            printf("       numpar: %d\n", (globtrees[3].child[i])->numpar);
+            printf("        x_mid: %e\n", (globtrees[3].child[i])->x_mid);
+            printf("        y_mid: %e\n", (globtrees[3].child[i])->y_mid);
+            printf("        z_mid: %e\n", (globtrees[3].child[i])->z_mid);
+            printf("       radius: %f\n", (globtrees[3].child[i])->radius);
+            printf("        ms223: %f\n\n", (globtrees[3].child[i])->ms[2][2][3]);
+        }
+    }
+    
+    return 0;

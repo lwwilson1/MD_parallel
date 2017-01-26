@@ -5,11 +5,12 @@
 
 double minval(double *x, int numels)
 {
+        int i;
         double min;
 
         min = x[0];
 
-        for (int i = 1; i < numels; i++) {
+        for (i = 1; i < numels; i++) {
                 if (min > x[i])
                         min = x[i];
         }
@@ -22,11 +23,12 @@ double minval(double *x, int numels)
 
 double maxval(double *x, int numels)
 {
+        int i;
         double max;
 
         max = x[0];
 
-        for (int i = 1; i < numels; i++) {
+        for (i = 1; i < numels; i++) {
                 if (max < x[i])
                         max = x[i];
         }
@@ -39,9 +41,10 @@ double maxval(double *x, int numels)
 
 double sum(double *x, int numels)
 {
+        int i;
         double sum = 0.0;
 
-        for (int i = 0; i < numels; i++) 
+        for (i = 0; i < numels; i++) 
                 sum = sum + x[i];
 
         return sum;

@@ -17,5 +17,6 @@ int mod(int a, int b);
 void inttobinstr(int val, int len, char* output);
 
 void remove_particle(struct par *array, int index, int array_length);
+void minmaxpar(struct par *parlist, int numpars, double *pminmax);
 
 #endif /* H_TOOLS_H */

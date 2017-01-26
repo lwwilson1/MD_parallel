@@ -11,18 +11,16 @@ CC = mpicc
 CFLAGS = -Wall -Wextra  -O2
 
 $(TARGET): $(OFILES)
-	$(CC) $(OFILES) -o $@
+	$(CC) $(CFLAGS) $(OFILES) -o $@
 
 $(ATARGET): $(AOFILES)
-	$(CC) $(AOFILES) -o $@
+	$(CC) $(CFLAGS) $(AOFILES) -o $@
 
 $(BTARGET): $(BOFILES)
-	$(CC) $(BOFILES) -o $@
+	$(CC) $(CFLAGS) $(BOFILES) -o $@
 
 clean:
-	rm -f $(OFILES) $(TARGET) 
-	      $(AOFILES) $(ATARGET)
-	      $(BOFILES) $(BTARGET)
+	rm -f $(OFILES) $(TARGET) $(AOFILES) $(ATARGET) $(BOFILES) $(BTARGET)
 
 
 tools.o: tools.c array.h xmalloc.h

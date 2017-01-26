@@ -51,7 +51,8 @@ int main(int argc, char** argv)
     double *denergy1;
     
     /* variables for date-time calculation */
-    double t1, t2;
+    double t1, t2, ttemp;
+    double tcomm = 0.0;
     
     /* local variables */
     int i, j, k;
@@ -251,7 +252,7 @@ int main(int argc, char** argv)
 
     /* Starting timer before dynamics simulation */
     if (rank == 0)
-        t1 = MPI_Wtime();;
+        t1 = MPI_Wtime();
 
     
     /* Velocity Verlet iteration */
@@ -287,6 +288,8 @@ int main(int argc, char** argv)
         sendtag = rank;
         
         for (k = 0; k < senditer; k++) {
+            
+            if (rank == 0) ttemp = MPI_Wtime();
             MPI_Sendrecv(rS1, xdim, MPI_DOUBLE, mod(rank+1,p), sendtag,      /*stag is origin*/
                          rS2, xdim, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,  /*rtag is origin*/
                          MPI_COMM_WORLD, &status);
@@ -300,12 +303,16 @@ int main(int argc, char** argv)
                          MPI_COMM_WORLD, &status);
             
             sendtag = status.MPI_TAG;
+            if (rank == 0) tcomm += MPI_Wtime() - ttemp;
+            
             
             direct_forces(&rS[(j+1)*xdim], qS, &fS[(j+1)*xdim],
                           &denergy[(j+1)*maxparloc], numparloc,
                           rS2, qS2, fS2, denergy2, numpar2,
                           pot_type, kappa);
 
+            
+            if (rank == 0) ttemp = MPI_Wtime();
             MPI_Sendrecv(fS2, xdim, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
                          fS1, xdim, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
                          MPI_COMM_WORLD, &status);
@@ -313,6 +320,8 @@ int main(int argc, char** argv)
             MPI_Sendrecv(denergy2, maxparloc, MPI_DOUBLE, sendtag, sendtag,        /*stag is origin*/
                          denergy1, maxparloc, MPI_DOUBLE, mod(rank+k+1,p), rank,   /*rtag is origin*/
                          MPI_COMM_WORLD, &status);
+            if (rank == 0) tcomm += MPI_Wtime() - ttemp;
+            
             
             for (i = 0; i < numparloc; i++) {
                 fS[(j+1)*xdim + i*3 + 0] += fS1[i*3 + 0];
@@ -330,11 +339,15 @@ int main(int argc, char** argv)
         
         /* For even number of procs, must perform a half iteration */
         if (p%2 == 0) {
+            
+            if (rank == 0) ttemp = MPI_Wtime();
             if(rank >= senditer && rank < p/2+senditer) {
                 MPI_Send(rS1, xdim, MPI_DOUBLE, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
                 MPI_Send(qS1, maxparloc, MPI_DOUBLE, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
                 MPI_Send(&numpar1, 1, MPI_INT, mod(rank+1,p), sendtag, MPI_COMM_WORLD);
             }
+            if (rank == 0) tcomm += MPI_Wtime() - ttemp;
+            
             
             if(rank >= p/2) {
                 MPI_Recv(rS2, xdim, MPI_DOUBLE, mod(rank-1,p), MPI_ANY_TAG,
@@ -356,10 +369,14 @@ int main(int argc, char** argv)
             }
             
             if(rank < p/2) {
+                
+                if (rank == 0) ttemp = MPI_Wtime();
                 MPI_Recv(fS1, xdim, MPI_DOUBLE, mod(rank+senditer+1,p), rank,
                          MPI_COMM_WORLD, &status);
                 MPI_Recv(denergy1, maxparloc, MPI_DOUBLE, mod(rank+senditer+1,p), rank,
                          MPI_COMM_WORLD, &status);
+                if (rank == 0) tcomm += MPI_Wtime() - ttemp;
+                
                 
                 for (i = 0; i < numparloc; i++) {
                     fS[(j+1)*xdim + i*3 + 0] += fS1[i*3 + 0];
@@ -384,17 +401,22 @@ int main(int argc, char** argv)
             pS[i*3+1] += 0.5 * dt * fS[(j+1)*xdim + i*3 + 1];
             pS[i*3+2] += 0.5 * dt * fS[(j+1)*xdim + i*3 + 2];
         }
+        
+        dengyloc = sum(&denergy[(j+1)*maxparloc], numparloc);
+        MPI_Reduce(&dengyloc, &dengyglob, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+        
+        if (rank == 0) printf("Iteration # %d... Global potential: %e\n", j, dengyglob);
     }
 
-    if (rank == 0)
-        t2 = MPI_Wtime();
+    if (rank == 0) t2 = MPI_Wtime() - t1;
     
     dengyloc = sum(&denergy[nt*maxparloc], numparloc);
     MPI_Reduce(&dengyloc, &dengyglob, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
     
     if (rank == 0) {
-        printf("\nElapsed time on proc 0: %f s\n", t2-t1);
-        printf("  Global potential sum: %f\n\n", dengyglob);
+        printf("\n  Elapsed total time (s): %f s\n", t2);
+        printf("  Communication time (s): %f s\n", tcomm);
+        printf("        Global potential: %e\n\n", dengyglob);
     }
 
     
